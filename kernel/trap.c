@@ -49,8 +49,9 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  uint64 scause = r_scause();
+  if(scause == 8){
     // system call
 
     if(p->killed)
@@ -65,61 +66,17 @@ usertrap(void)
     intr_on();
 
     syscall();
-  }
-  else if(r_scause()==13||r_scause()==15)//说明此时发生缺页错误
-  {
-    char*pa;
-    uint64 va=r_stval();
-
-    //进行地址的正确性判断
-    if(va>=p->sz)
-    {
-      printf("usertrap(): invalid va=%p higher than p->sz=%p\n",va, p->sz);
-      p->killed = 1;
-      goto end;
-    }
-    if (va < PGROUNDUP(p->trapframe->sp))
-    {
-      printf("usertrap(): invalid va=%p below the user stack sp=%p\n",va, p->trapframe->sp);
-      p->killed = 1;
-      goto end;
-    }
-    
-    if((pa=kalloc())!=0)//分配空间成功
-    {
-        uint64 va = PGROUNDDOWN(r_stval());//引发pagefault的地址向下取整
-        memset(pa, 0, PGSIZE);
-
-        //映射对应的页表
-        if(mappages(p->pagetable,PGROUNDDOWN(va), PGSIZE, (uint64)pa, PTE_W|PTE_R|PTE_U) != 0)
-        {
-          // 页表映射失败
-          kfree(pa);
-          printf("usertrap(): mappages() failed\n");
-          p->killed = 1;
-          goto end;
-      }
-    }
-    else//分配空间失败
-    {
-      printf("usertrap(): kalloc() failed\n");
-      p->killed = 1;
-      goto end;
-    }
-
-    if(p->killed)
-      exit(-1);
-  }
-  else if((which_dev = devintr()) != 0){
+  } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (scause == 15) {
+    if (uvmremap(p->pagetable, PGROUNDDOWN(r_stval())) != 0)
+      p->killed = 1;
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
-    goto end;
   }
 
-end:
   if(p->killed)
     exit(-1);
 
@@ -173,8 +130,6 @@ usertrapret(void)
   // and switches to user mode with sret.
   uint64 fn = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
-
-  
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

@@ -47,21 +47,8 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-
-  if(n>=0&&addr+n>=addr)
-  {
-  myproc()->sz+=n;
-  }
-  else if(n<0&&addr+n>PGROUNDDOWN(myproc()->trapframe->sp))//说明在用户空间内
-  {
-    myproc()->sz=uvmdealloc(myproc()->pagetable,addr,addr+n);
-  }
-  else
-  {
+  if(growproc(n) < 0)
     return -1;
-  }
-  //if(growproc(n) < 0)
-  //  return -1;
   return addr;
 }
 
